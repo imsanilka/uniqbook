@@ -2,6 +2,7 @@ import type { Href } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { NavigationCard, NavigationScreen } from '@/components/navigation-screen';
+import { SignOutButton } from '@/features/auth/sign-out-button';
 
 const destinations = [
   { href: '/submit-request', title: 'Submit Request', description: 'Ask a question or report an issue.' },
@@ -21,6 +22,7 @@ export default function HomeScreen() {
       {destinations.map((destination) => (
         <NavigationCard key={destination.href} {...destination} />
       ))}
+      <SignOutButton />
     </NavigationScreen>
   );
 }

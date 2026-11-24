@@ -13,7 +13,7 @@ export function NavigationScreen({ children, home = false }: { children: ReactNo
     <SafeAreaView
       edges={home ? ['top', 'bottom', 'left', 'right'] : ['bottom', 'left', 'right']}
       style={[styles.screen, { backgroundColor: theme.background }]}>
-      <ScrollView contentContainerStyle={styles.content}>{children}</ScrollView>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">{children}</ScrollView>
     </SafeAreaView>
   );
 }
