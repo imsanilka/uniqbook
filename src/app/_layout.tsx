@@ -8,7 +8,7 @@ import { AuthProvider, useAuthSession } from '@/features/auth/session';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export const unstable_settings = {
-  initialRouteName: 'index',
+  anchor: 'index',
 };
 
 function RootStack() {

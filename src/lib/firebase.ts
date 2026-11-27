@@ -1,5 +1,7 @@
+
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { connectAuthEmulator, type Auth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 
 import { initializeFirebaseAuth } from './firebase-auth';
 
@@ -20,6 +22,7 @@ export function getFirebaseAuth(): Auth {
   const app = getApps().some(({ name }) => name === '[DEFAULT]')
     ? getApp()
     : initializeApp({ apiKey, authDomain, projectId, appId });
+
   const instance = initializeFirebaseAuth(app);
   const emulatorUrl = process.env.EXPO_PUBLIC_FIREBASE_AUTH_EMULATOR_URL?.trim();
 
@@ -29,4 +32,8 @@ export function getFirebaseAuth(): Auth {
 
   auth = instance;
   return auth;
+}
+
+export function getFirebaseDb() {
+  return getFirestore(getFirebaseAuth().app);
 }
