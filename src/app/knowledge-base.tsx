@@ -1,6 +1,7 @@
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -8,6 +9,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
+import { getPublishedArticles } from '../features/knowledge/knowledge-service';
 
 const categories = [
   'All',
@@ -17,56 +20,64 @@ const categories = [
   'Administration',
 ];
 
-const questions = [
-  {
-    id: '1',
-    category: 'Academic',
-    question: 'How do I check my exam results?',
-    answer:
-      'Sign in to the student portal and check the examination results section.',
-  },
-  {
-    id: '2',
-    category: 'IT Support',
-    question: 'How do I reset my student portal password?',
-    answer:
-      'Use the password recovery option or contact the campus IT support team.',
-  },
-  {
-    id: '3',
-    category: 'Facilities',
-    question: 'How do I access the library?',
-    answer:
-      'Contact the campus library for access requirements and opening hours.',
-  },
-  {
-    id: '4',
-    category: 'IT Support',
-    question: 'How do I connect to campus Wi-Fi?',
-    answer:
-      'Contact IT Support for the campus Wi-Fi network and login instructions.',
-  },
-  {
-    id: '5',
-    category: 'Administration',
-    question: 'How do I request a student confirmation letter?',
-    answer:
-      'Contact the student administration office for the application procedure.',
-  },
-  {
-    id: '6',
-    category: 'Academic',
-    question: 'How do I contact my lecturer?',
-    answer:
-      'Check your learning portal for lecturer contact details or contact your faculty.',
-  },
-];
+type Question = {
+  id: string;
+  category: string;
+  question: string;
+  answer: string;
+};
 
 export default function KnowledgeBaseScreen() {
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
-  const [expandedId, setExpandedId] =
-    useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadQuestions = async () => {
+      try {
+        const articles = await getPublishedArticles();
+
+        if (active) {
+          setQuestions(
+            articles.map((article) => ({
+              id: article.id,
+              category: article.category ?? '',
+              question: article.title ?? '',
+              answer: article.content ?? '',
+            }))
+          );
+        }
+      } catch (err) {
+        console.error('Error loading articles:', err);
+
+        if (active) {
+          setError('Unable to load questions. Please try again later.');
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadQuestions();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const availableCategories = Array.from(
+    new Set([
+      ...categories,
+      ...questions.map((item) => item.category).filter(Boolean),
+    ])
+  );
 
   const filteredQuestions = questions.filter((item) => {
     const matchesCategory =
@@ -105,10 +116,14 @@ export default function KnowledgeBaseScreen() {
       />
 
       <View style={styles.categories}>
-        {categories.map((item) => (
+        {availableCategories.map((item) => (
           <TouchableOpacity
             key={item}
             onPress={() => setCategory(item)}
+            accessibilityRole="button"
+            accessibilityState={{
+              selected: category === item,
+            }}
             style={[
               styles.category,
               category === item && styles.selected,
@@ -121,53 +136,85 @@ export default function KnowledgeBaseScreen() {
         ))}
       </View>
 
-      <Text style={styles.count}>
-        {filteredQuestions.length} questions found
-      </Text>
+      {loading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator
+            size="large"
+            color="#75c9a7"
+          />
 
-      {filteredQuestions.length === 0 && (
-        <Text style={styles.empty}>
-          No matching questions found.
+          <Text style={styles.loadingText}>
+            Loading questions...
+          </Text>
+        </View>
+      )}
+
+      {!!error && (
+        <Text style={styles.error}>
+          {error}
         </Text>
       )}
 
-      {filteredQuestions.map((item) => (
-        <TouchableOpacity
-          key={item.id}
-          style={styles.card}
-          accessibilityRole="button"
-          accessibilityState={{
-            expanded: expandedId === item.id,
-          }}
-          onPress={() =>
-            setExpandedId(
-              expandedId === item.id ? null : item.id
-            )
-          }
-        >
-          <View style={styles.cardHeader}>
-            <View style={styles.cardContent}>
-              <Text style={styles.question}>
-                {item.question}
-              </Text>
+      {!loading && !error && (
+        <>
+          <Text style={styles.count}>
+            {filteredQuestions.length}{' '}
+            {filteredQuestions.length === 1
+              ? 'question found'
+              : 'questions found'}
+          </Text>
 
-              <Text style={styles.tag}>
-                {item.category}
-              </Text>
-            </View>
-
-            <Text style={styles.arrow}>
-              {expandedId === item.id ? '−' : '+'}
-            </Text>
-          </View>
-
-          {expandedId === item.id && (
-            <Text style={styles.answer}>
-              {item.answer}
+          {filteredQuestions.length === 0 && (
+            <Text style={styles.empty}>
+              No matching questions found.
             </Text>
           )}
-        </TouchableOpacity>
-      ))}
+
+          {filteredQuestions.map((item) => (
+            <TouchableOpacity
+              key={item.id}
+              style={styles.card}
+              accessibilityRole="button"
+              accessibilityState={{
+                expanded: expandedId === item.id,
+              }}
+              onPress={() =>
+                setExpandedId(
+                  expandedId === item.id
+                    ? null
+                    : item.id
+                )
+              }
+            >
+              <View style={styles.cardHeader}>
+                <View style={styles.cardContent}>
+                  <Text style={styles.question}>
+                    {item.question}
+                  </Text>
+
+                  <Text style={styles.tag}>
+                    {item.category}
+                  </Text>
+                </View>
+
+                <Text style={styles.arrow}>
+                  {expandedId === item.id ? '−' : '+'}
+                </Text>
+              </View>
+
+              {expandedId === item.id && (
+                <Text style={styles.answer}>
+                  {item.answer}
+                </Text>
+              )}
+            </TouchableOpacity>
+          ))}
+
+          <Text style={styles.notice}>
+            Published articles from Firebase.
+          </Text>
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -178,17 +225,20 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: '#101010',
   },
+
   heading: {
     color: '#ffffff',
     fontSize: 28,
     fontWeight: 'bold',
     marginBottom: 8,
   },
+
   subtitle: {
     color: '#aaaaaa',
     fontSize: 15,
     marginBottom: 22,
   },
+
   search: {
     backgroundColor: '#202020',
     borderColor: '#444444',
@@ -199,55 +249,67 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 20,
   },
+
   categories: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
     marginBottom: 20,
   },
+
   category: {
     backgroundColor: '#292929',
     padding: 12,
     borderRadius: 8,
   },
+
   selected: {
     backgroundColor: '#087f5b',
   },
+
   categoryText: {
     color: '#ffffff',
   },
+
   count: {
     color: '#aaaaaa',
     marginBottom: 15,
   },
+
   card: {
     backgroundColor: '#202020',
     padding: 18,
     borderRadius: 12,
     marginBottom: 12,
   },
+
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
   },
+
   cardContent: {
     flex: 1,
   },
+
   question: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: 'bold',
   },
+
   tag: {
     color: '#75c9a7',
     fontSize: 13,
     marginTop: 8,
   },
+
   arrow: {
     color: '#ffffff',
     fontSize: 24,
     marginLeft: 10,
   },
+
   answer: {
     color: '#cccccc',
     fontSize: 15,
@@ -257,9 +319,32 @@ const styles = StyleSheet.create({
     borderTopColor: '#444444',
     paddingTop: 15,
   },
+
   empty: {
     color: '#aaaaaa',
     textAlign: 'center',
     marginTop: 20,
+  },
+
+  loadingContainer: {
+    alignItems: 'center',
+    marginTop: 30,
+  },
+
+  loadingText: {
+    color: '#aaaaaa',
+    marginTop: 12,
+  },
+
+  error: {
+    color: '#ff6b6b',
+    textAlign: 'center',
+    marginTop: 20,
+  },
+
+  notice: {
+    color: '#aaaaaa',
+    fontSize: 12,
+    marginTop: 15,
   },
 });
