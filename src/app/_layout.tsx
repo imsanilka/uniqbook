@@ -1,10 +1,24 @@
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+ 
+import {
+  DarkTheme,
+  DefaultTheme,
+  Stack,
+  ThemeProvider,
+} from 'expo-router';
+
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator } from 'react-native';
 
 import { NavigationScreen } from '@/components/navigation-screen';
 import { ThemedText } from '@/components/themed-text';
-import { AuthProvider, useAuthSession } from '@/features/auth/session';
+
+import {
+  AuthProvider,
+  useAuthSession,
+} from '@/features/auth/session';
+
+import { StaffProvider } from '@/features/staff/staff-provider';
+
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export const unstable_settings = {
@@ -18,7 +32,10 @@ function RootStack() {
     return (
       <NavigationScreen home>
         <ActivityIndicator />
-        <ThemedText accessibilityLiveRegion="polite">Restoring your session…</ThemedText>
+
+        <ThemedText accessibilityLiveRegion="polite">
+          Restoring your session...
+        </ThemedText>
       </NavigationScreen>
     );
   }
@@ -26,29 +43,114 @@ function RootStack() {
   if (session.status === 'error') {
     return (
       <NavigationScreen home>
-        <ThemedText type="subtitle" accessibilityRole="header">Authentication unavailable</ThemedText>
-        <ThemedText accessibilityRole="alert">{session.message}</ThemedText>
+        <ThemedText
+          type="subtitle"
+          accessibilityRole="header"
+        >
+          Authentication unavailable
+        </ThemedText>
+
+        <ThemedText accessibilityRole="alert">
+          {session.message}
+        </ThemedText>
       </NavigationScreen>
     );
   }
 
   return (
-    <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal', headerShadowVisible: false }}>
+    <Stack
+      screenOptions={{
+        headerBackButtonDisplayMode: 'minimal',
+        headerShadowVisible: false,
+      }}
+    >
       <Stack.Protected guard={!session.user}>
-        <Stack.Screen name="login" options={{ headerShown: false }} />
-        <Stack.Screen name="register" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="login"
+          options={{ headerShown: false }}
+        />
+
+        <Stack.Screen
+          name="register"
+          options={{ headerShown: false }}
+        />
       </Stack.Protected>
+
       <Stack.Protected guard={!!session.user}>
-        <Stack.Screen name="index" options={{ title: 'Home', headerShown: false }} />
-        <Stack.Screen name="submit-request" options={{ title: 'Submit Request' }} />
-        <Stack.Screen name="my-requests/index" options={{ title: 'My Requests' }} />
-        <Stack.Screen name="my-requests/[id]" options={{ title: 'Request Details' }} />
-        <Stack.Screen name="knowledge-base" options={{ title: 'Knowledge Base' }} />
-        <Stack.Screen name="clubs-events" options={{ title: 'Clubs & Events' }} />
-        <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
-        <Stack.Screen name="explore" options={{ title: 'Explore' }} />
+        <Stack.Screen
+          name="index"
+          options={{
+            title: 'Home',
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="submit-request"
+          options={{ title: 'Submit Request' }}
+        />
+
+        <Stack.Screen
+          name="my-requests/index"
+          options={{ title: 'My Requests' }}
+        />
+
+        <Stack.Screen
+          name="my-requests/[id]"
+          options={{ title: 'Request Details' }}
+        />
+
+        <Stack.Screen
+          name="knowledge-base"
+          options={{ title: 'Knowledge Base' }}
+        />
+
+        <Stack.Screen
+          name="clubs-events"
+          options={{ title: 'Clubs & Events' }}
+        />
+
+        <Stack.Screen
+          name="notifications"
+          options={{ title: 'Notifications' }}
+        />
+
+        <Stack.Screen
+          name="explore"
+          options={{ title: 'Explore' }}
+        />
+
+        <Stack.Screen
+          name="staff-queue/index"
+          options={{ title: 'Staff Queue (Demo)' }}
+        />
+
+        <Stack.Screen
+          name="staff-queue/[id]"
+          options={{ title: 'Staff Request Details (Demo)' }}
+        />
+
+        <Stack.Screen
+          name="staff-queue/notification-demo"
+          options={{ title: 'Notification Demo' }}
+        />
       </Stack.Protected>
     </Stack>
+  );
+}
+
+function SessionRoot() {
+  const session = useAuthSession();
+
+  const sessionKey =
+    session.status === 'ready'
+      ? session.user?.uid ?? 'guest'
+      : session.status;
+
+  return (
+    <StaffProvider key={sessionKey}>
+      <RootStack />
+    </StaffProvider>
   );
 }
 
@@ -56,11 +158,19 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider
+      value={
+        colorScheme === 'dark'
+          ? DarkTheme
+          : DefaultTheme
+      }
+    >
       <StatusBar style="auto" />
+
       <AuthProvider>
-        <RootStack />
+        <SessionRoot />
       </AuthProvider>
     </ThemeProvider>
   );
 }
+
