@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -9,66 +9,100 @@ import {
   View,
 } from 'react-native';
 
-const clubs = [
-  {
-    id: 'c1',
-    title: 'IT Society',
-    category: 'Technology',
-    description: 'Explore programming, technology workshops and software development.',
-  },
-  {
-    id: 'c2',
-    title: 'Media Club',
-    category: 'Creative',
-    description: 'Develop photography, videography and media production skills.',
-  },
-  {
-    id: 'c3',
-    title: 'Sports Club',
-    category: 'Sports',
-    description: 'Participate in sports activities and university competitions.',
-  },
-  {
-    id: 'c4',
-    title: 'Music Club',
-    category: 'Entertainment',
-    description: 'Connect with students interested in music and performances.',
-  },
-];
+import {
+  getPublishedClubs,
+  getPublishedEvents,
+} from '../features/clubs/clubs-service';
 
-const events = [
-  {
-    id: 'e1',
-    title: 'Technology Workshop',
-    category: 'Workshop',
-    date: 'December 5, 2026',
-    location: 'Computer Lab',
-    description: 'Learn modern software development techniques.',
-  },
-  {
-    id: 'e2',
-    title: 'Campus Sports Day',
-    category: 'Sports',
-    date: 'December 12, 2026',
-    location: 'University Grounds',
-    description: 'Participate in friendly campus sports competitions.',
-  },
-  {
-    id: 'e3',
-    title: 'Student Talent Show',
-    category: 'Entertainment',
-    date: 'December 18, 2026',
-    location: 'Auditorium',
-    description: 'Showcase student creativity, music and performances.',
-  },
-];
+interface ClubItem {
+  id: string;
+  title: string;
+  category: string;
+  description: string;
+}
+
+interface EventItem extends ClubItem {
+  date: string;
+  location: string;
+}
 
 export default function ClubsEventsScreen() {
+  const [clubs, setClubs] = useState<ClubItem[]>([]);
+  const [events, setEvents] = useState<EventItem[]>([]);
+
+  const [clubsLoading, setClubsLoading] = useState(true);
+  const [eventsLoading, setEventsLoading] = useState(true);
+
+  const [clubsError, setClubsError] = useState('');
+  const [eventsError, setEventsError] = useState('');
+
   const [tab, setTab] = useState<'Clubs' | 'Events'>('Clubs');
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  useEffect(() => {
+    async function loadClubs() {
+      try {
+        const data = await getPublishedClubs();
+
+        setClubs(
+          data.map((club) => ({
+            id: club.id,
+            title: club.name,
+            category: club.category,
+            description: club.description,
+          }))
+        );
+      } catch (err) {
+        console.error(err);
+        setClubsError('Unable to load clubs.');
+      } finally {
+        setClubsLoading(false);
+      }
+    }
+
+    loadClubs();
+  }, []);
+
+  useEffect(() => {
+    async function loadEvents() {
+      try {
+        const data = await getPublishedEvents();
+
+        setEvents(
+          data.map((event) => ({
+            id: event.id,
+            title: event.title,
+            category: event.category,
+            description: event.description,
+            date: event.date.toDate().toLocaleDateString('en-GB', {
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+            }),
+            location: event.location,
+          }))
+        );
+      } catch (err) {
+        console.error(err);
+        setEventsError('Unable to load events.');
+      } finally {
+        setEventsLoading(false);
+      }
+    }
+
+    loadEvents();
+  }, []);
+
   const items = tab === 'Clubs' ? clubs : events;
+
+  const loading = tab === 'Clubs'
+    ? clubsLoading
+    : eventsLoading;
+
+  const error = tab === 'Clubs'
+    ? clubsError
+    : eventsError;
 
   const filteredItems = items.filter((item) =>
     `${item.title} ${item.category} ${item.description}`
@@ -115,17 +149,29 @@ export default function ClubsEventsScreen() {
         onChangeText={setSearch}
       />
 
-      <Text style={styles.count}>
-        {filteredItems.length} {tab.toLowerCase()} found
-      </Text>
+      {loading && (
+        <Text style={styles.subtitle}>
+          Loading {tab.toLowerCase()}...
+        </Text>
+      )}
 
-      {filteredItems.length === 0 && (
+      {!loading && error !== '' && (
+        <Text style={styles.error}>{error}</Text>
+      )}
+
+      {!loading && !error && (
+        <Text style={styles.count}>
+          {filteredItems.length} {tab.toLowerCase()} found
+        </Text>
+      )}
+
+      {!loading && !error && filteredItems.length === 0 && (
         <Text style={styles.subtitle}>
           No matching results found.
         </Text>
       )}
 
-      {filteredItems.map((item) => (
+      {!loading && !error && filteredItems.map((item) => (
         <TouchableOpacity
           key={item.id}
           style={styles.card}
@@ -137,8 +183,13 @@ export default function ClubsEventsScreen() {
         >
           <View style={styles.cardHeader}>
             <View style={styles.cardContent}>
-              <Text style={styles.title}>{item.title}</Text>
-              <Text style={styles.category}>{item.category}</Text>
+              <Text style={styles.title}>
+                {item.title}
+              </Text>
+
+              <Text style={styles.category}>
+                {item.category}
+              </Text>
             </View>
 
             <Text style={styles.arrow}>
@@ -167,7 +218,9 @@ export default function ClubsEventsScreen() {
       ))}
 
       <Text style={styles.notice}>
-        Demonstration content — sample clubs and events.
+        {tab === 'Clubs'
+          ? 'Published clubs from Firebase.'
+          : 'Published events from Firebase.'}
       </Text>
     </ScrollView>
   );
@@ -269,5 +322,10 @@ const styles = StyleSheet.create({
     color: '#aaaaaa',
     fontSize: 12,
     marginTop: 15,
+  },
+  error: {
+    color: '#ff6b6b',
+    fontSize: 15,
+    marginBottom: 15,
   },
 });
