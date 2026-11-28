@@ -1,6 +1,8 @@
  
-import { useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
+  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -8,145 +10,124 @@ import {
   Pressable,
 } from 'react-native';
 
-import { mockStaff } from '../../features/staff/mock-data';
-
-import { useStaff } from '../../features/staff/staff-provider';
+import { fetchStaffQueue } from '@/features/staff/staff-api';
+import type { StaffRequest } from '@/features/staff/types';
 
 export default function StaffQueueScreen() {
   const router = useRouter();
 
-  const { requests, notifications } = useStaff();
+  const [requests, setRequests] = useState<StaffRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const assignedRequests = requests.filter(
-    (request) =>
-      request.assignedTeamId === mockStaff.teamId
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      async function loadQueue() {
+        setLoading(true);
+        setError('');
+        setRequests([]);
+
+        try {
+          const data = await fetchStaffQueue();
+
+          if (active) {
+            setRequests(data);
+          }
+        } catch (err) {
+          if (active) {
+            setError(
+              err instanceof Error
+                ? err.message
+                : 'Unable to load staff queue.'
+            );
+          }
+        } finally {
+          if (active) setLoading(false);
+        }
+      }
+
+      void loadQueue();
+
+      return () => {
+        active = false;
+      };
+    }, [])
   );
 
-  const inProgress = assignedRequests.filter(
-    (request) => request.status === 'In Progress'
+  const inProgress = requests.filter(
+    (item) => item.status === 'In Progress'
   ).length;
 
-  const resolved = assignedRequests.filter(
-    (request) => request.status === 'Resolved'
-  ).length;
-
-  const unreadCount = notifications.filter(
-    (notification) => !notification.read
+  const resolved = requests.filter(
+    (item) => item.status === 'Resolved'
   ).length;
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.hero}>
         <Text style={styles.badge}>STAFF PORTAL</Text>
-
         <Text style={styles.heading}>Staff Queue</Text>
-
-        <Text style={styles.subtitle}>
-          IT Support Department
-        </Text>
-
-        <Text style={styles.subtitle}>Demo mode</Text>
-      </View>
-
-      <View style={styles.statsRow}>
-        <View style={styles.statCard}>
-          <Text style={styles.label}>
-            Assigned Requests
-          </Text>
-
-          <Text style={styles.number}>
-            {assignedRequests.length}
-          </Text>
-        </View>
-
-        <View style={styles.statCard}>
-          <Text style={styles.label}>In Progress</Text>
-
-          <Text style={styles.number}>
-            {inProgress}
-          </Text>
-        </View>
-
-        <View style={styles.statCard}>
-          <Text style={styles.label}>Resolved</Text>
-
-          <Text style={styles.number}>
-            {resolved}
-          </Text>
-        </View>
-      </View>
-
-      <Pressable
-        style={styles.notificationButton}
-        onPress={() =>
-          router.push('/staff-queue/notification-demo')
-        }
-      >
-        <Text style={styles.notificationText}>
-          Notification Demo
-        </Text>
-
-        <Text style={styles.notificationCount}>
-          {unreadCount} Unread
-        </Text>
-      </Pressable>
-
-      <Text style={styles.sectionTitle}>
-        Department Queue
-      </Text>
-
-      {assignedRequests.length === 0 && (
         <Text style={styles.label}>
-          No assigned requests.
+          Assigned department requests
         </Text>
+      </View>
+
+      {loading && <ActivityIndicator color="#A7E5CC" />}
+
+      {!!error && (
+        <Text style={styles.error}>{error}</Text>
       )}
 
-      {assignedRequests.map((request) => (
-        <Pressable
-          key={request.id}
-          style={styles.card}
-          onPress={() =>
-            router.push({
-              pathname: '/staff-queue/[id]',
-              params: { id: request.id },
-            })
-          }
-        >
-          <Text style={styles.requestId}>
-            {request.id}
-          </Text>
-
-          <Text style={styles.title}>
-            {request.title}
-          </Text>
-
-          <Text style={styles.label}>
-            {request.category}
-          </Text>
-
-          <View style={styles.statusRow}>
-            <Text
-              style={[
-                styles.status,
-                request.status === 'Resolved' &&
-                  styles.resolvedStatus,
-              ]}
-            >
-              {request.status}
-            </Text>
-
-            {request.anonymous && (
-              <Text style={styles.anonymous}>
-                Anonymous
-              </Text>
-            )}
+      {!loading && !error && (
+        <>
+          <View style={styles.statsRow}>
+            {[
+              { label: 'Assigned', value: requests.length },
+              { label: 'In Progress', value: inProgress },
+              { label: 'Resolved', value: resolved },
+            ].map((item) => (
+              <View key={item.label} style={styles.stat}>
+                <Text style={styles.label}>{item.label}</Text>
+                <Text style={styles.number}>{item.value}</Text>
+              </View>
+            ))}
           </View>
 
-          <Text style={styles.link}>
-            View Details
-          </Text>
-        </Pressable>
-      ))}
+          <Text style={styles.title}>Department Queue</Text>
+
+          {requests.length === 0 && (
+            <Text style={styles.label}>
+              No assigned requests.
+            </Text>
+          )}
+
+          {requests.map((request) => (
+            <Pressable
+              key={request.id}
+              style={styles.card}
+              onPress={() =>
+                router.push({
+                  pathname: '/staff-queue/[id]',
+                  params: { id: request.id },
+                })
+              }
+            >
+              <Text style={styles.badge}>{request.id}</Text>
+              <Text style={styles.title}>{request.title}</Text>
+              <Text style={styles.label}>{request.category}</Text>
+              <Text style={styles.status}>{request.status}</Text>
+
+              {request.anonymous && (
+                <Text style={styles.label}>Anonymous</Text>
+              )}
+
+              <Text style={styles.badge}>View Details</Text>
+            </Pressable>
+          ))}
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -156,119 +137,61 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     padding: 20,
     backgroundColor: '#101010',
+    gap: 16,
   },
   hero: {
     backgroundColor: '#123C35',
     padding: 24,
     borderRadius: 24,
-    marginBottom: 20,
-  },
-  badge: {
-    color: '#A7E5CC',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 2,
-    marginBottom: 12,
+    gap: 10,
   },
   heading: {
     color: '#FFFFFF',
     fontSize: 30,
     fontWeight: 'bold',
-    marginBottom: 8,
   },
-  subtitle: {
-    color: '#D2EAE0',
-    fontSize: 15,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 24,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#202020',
-    padding: 14,
-    borderRadius: 14,
+  badge: {
+    color: '#A7E5CC',
+    fontSize: 13,
+    fontWeight: '600',
   },
   label: {
     color: '#AAAAAA',
     fontSize: 14,
   },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  stat: {
+    flex: 1,
+    padding: 14,
+    backgroundColor: '#202020',
+    borderRadius: 14,
+  },
   number: {
     color: '#FFFFFF',
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: 'bold',
-    marginTop: 8,
   },
-  sectionTitle: {
+  title: {
     color: '#FFFFFF',
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 16,
   },
   card: {
     backgroundColor: '#202020',
     padding: 20,
     borderRadius: 14,
-    marginBottom: 15,
-  },
-  requestId: {
-    color: '#A7E5CC',
-    fontSize: 12,
-    marginBottom: 8,
-  },
-  title: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 10,
-    marginTop: 15,
   },
   status: {
     color: '#F5C46B',
-    backgroundColor: '#393021',
-    padding: 8,
-    borderRadius: 8,
-  },
-  resolvedStatus: {
-    color: '#86D6A0',
-    backgroundColor: '#19382A',
-  },
-  anonymous: {
-    color: '#CCCCCC',
-    backgroundColor: '#333333',
-    padding: 8,
-    borderRadius: 8,
-  },
-  link: {
-    color: '#A7E5CC',
-    marginTop: 16,
     fontWeight: '600',
   },
-  notificationButton: {
-    backgroundColor: '#123C35',
-    padding: 18,
-    borderRadius: 14,
-    marginBottom: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  notificationText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  notificationCount: {
-    color: '#A7E5CC',
-    fontSize: 14,
-    fontWeight: '600',
+  error: {
+    color: '#FF9999',
+    fontSize: 15,
   },
 });
 

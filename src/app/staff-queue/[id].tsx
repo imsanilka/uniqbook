@@ -1,88 +1,188 @@
  
-import { useState } from 'react';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
 import {
+  useFocusEffect,
+  useLocalSearchParams,
+} from 'expo-router';
+
+import {
+  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
   Pressable,
-  TextInput,
 } from 'react-native';
 
-import { mockStaff } from '../../features/staff/mock-data';
-import { getAllowedStatuses } from '../../features/staff/status';
-import { useStaff } from '../../features/staff/staff-provider';
+import {
+  fetchStaffRequest,
+  fetchStaffReplyHistory,
+  submitStaffReply,
+  changeStaffRequestStatus,
+  type StaffReplyRecord,
+} from '@/features/staff/staff-api';
+
+import { getAllowedStatuses } from '@/features/staff/status';
+
+import type {
+  StaffRequest,
+  RequestStatus,
+} from '@/features/staff/types';
+
+function createEventId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2).padEnd(16, '0');
+}
 
 export default function StaffRequestDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const router = useRouter();
 
-  const {
-    requests,
-    replies,
-    updateStatus,
-    sendReply,
-  } = useStaff();
+  return <RequestDetails key={id} id={id} />;
+}
 
-  const [drafts, setDrafts] = useState<
-    Record<string, string>
-  >({});
+function RequestDetails({ id }: { id: string }) {
+  const [request, setRequest] = useState<StaffRequest | null>(null);
+  const [replies, setReplies] = useState<StaffReplyRecord[]>([]);
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
-  const request = requests.find(
-    (item) =>
-      item.id === id &&
-      item.assignedTeamId === mockStaff.teamId
+  const pending = useRef<{
+    key: string;
+    eventId: string;
+  } | null>(null);
+
+  const locked = useRef(false);
+  const [hasPending, setHasPending] = useState(false);
+
+  const load = useCallback(async () => {
+    const [details, history] = await Promise.all([
+      fetchStaffRequest(id),
+      fetchStaffReplyHistory(id),
+    ]);
+
+    return { details, history };
+  }, [id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      setLoading(true);
+      setRequest(null);
+      setReplies([]);
+      setError('');
+
+      load()
+        .then(({ details, history }) => {
+          if (active) {
+            setRequest(details);
+            setReplies(history);
+          }
+        })
+        .catch((err) => {
+          if (active) {
+            setError(
+              err instanceof Error
+                ? err.message
+                : 'Request access denied.'
+            );
+          }
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+
+      return () => {
+        active = false;
+      };
+    }, [load])
   );
 
-  if (!request) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.heading}>
-          Access Denied
-        </Text>
+  function getEventId(key: string) {
+    if (pending.current) {
+      if (pending.current.key !== key) {
+        throw new Error(
+          'Retry the previous action before starting another.'
+        );
+      }
 
-        <Text style={styles.message}>
-          Request not found or unavailable for your department.
-        </Text>
+      return pending.current.eventId;
+    }
 
-        <Pressable
-          style={styles.button}
-          onPress={() => router.replace('/staff-queue')}
-        >
-          <Text style={styles.buttonText}>
-            Back to Queue
-          </Text>
-        </Pressable>
-      </View>
+    const eventId = createEventId();
+
+    pending.current = { key, eventId };
+    setHasPending(true);
+
+    return eventId;
+  }
+
+  async function performAction(
+    key: string,
+    action: (eventId: string) => Promise<unknown>,
+    clearMessage = false
+  ) {
+    if (locked.current) return;
+
+    locked.current = true;
+    setBusy(true);
+    setError('');
+
+    try {
+      const eventId = getEventId(key);
+
+      await action(eventId);
+
+      pending.current = null;
+      setHasPending(false);
+
+      if (clearMessage) setMessage('');
+
+      try {
+        const { details, history } = await load();
+
+        setRequest(details);
+        setReplies(history);
+      } catch {
+        setRequest(null);
+        setReplies([]);
+        setError(
+          'Action saved. Reopen the request to refresh.'
+        );
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Action failed. Please retry.'
+      );
+    } finally {
+      locked.current = false;
+      setBusy(false);
+    }
+  }
+
+  function sendReply() {
+    const clean = message.trim();
+
+    if (!clean || clean.length > 1000) return;
+
+    void performAction(
+      `reply:${clean}`,
+      (eventId) => submitStaffReply(id, clean, eventId),
+      true
     );
   }
 
-  const currentStatus = request.status;
-
-  const allowedStatuses =
-    getAllowedStatuses(currentStatus);
-
-  const replyText = drafts[request.id] ?? '';
-
-  const requestReplies = replies.filter(
-    (reply) => reply.requestId === request.id
-  );
-
-  const handleSendReply = () => {
-    const message = replyText.trim();
-
-    if (!message || message.length > 1000) {
-      return;
-    }
-
-    sendReply(request.id, message);
-
-    setDrafts((previous) => ({
-      ...previous,
-      [request.id]: '',
-    }));
-  };
+  function updateStatus(status: RequestStatus) {
+    void performAction(
+      `status:${status}`,
+      (eventId) =>
+        changeStaffRequestStatus(id, status, eventId)
+    );
+  }
 
   return (
     <ScrollView
@@ -90,185 +190,120 @@ export default function StaffRequestDetailsScreen() {
       keyboardShouldPersistTaps="handled"
     >
       <View style={styles.hero}>
-        <Text style={styles.badge}>
-          STAFF PORTAL
-        </Text>
-
-        <Text style={styles.heading}>
-          Request Details
-        </Text>
-
-        <Text style={styles.message}>
-          Demo mode
-        </Text>
+        <Text style={styles.heading}>Request Details</Text>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.label}>Request ID</Text>
-        <Text style={styles.value}>{request.id}</Text>
+      {loading && <ActivityIndicator color="#A7E5CC" />}
 
-        <Text style={styles.label}>Title</Text>
-        <Text style={styles.value}>{request.title}</Text>
+      {!!error && (
+        <Text style={styles.error}>{error}</Text>
+      )}
 
-        <Text style={styles.label}>Description</Text>
-        <Text style={styles.value}>
-          {request.description}
-        </Text>
+      {request && !loading && (
+        <>
+          <View style={styles.card}>
+            <Text style={styles.label}>Request ID</Text>
+            <Text style={styles.value}>{request.id}</Text>
 
-        <Text style={styles.label}>Category</Text>
-        <Text style={styles.value}>
-          {request.category}
-        </Text>
+            <Text style={styles.label}>Title</Text>
+            <Text style={styles.value}>{request.title}</Text>
 
-        <Text style={styles.label}>Status</Text>
+            <Text style={styles.label}>Description</Text>
+            <Text style={styles.value}>{request.description}</Text>
 
-        <Text
-          style={[
-            styles.status,
-            currentStatus === 'Resolved' &&
-              styles.resolvedStatus,
-          ]}
-        >
-          {currentStatus}
-        </Text>
+            <Text style={styles.label}>Category</Text>
+            <Text style={styles.value}>{request.category}</Text>
 
-        <Text style={styles.label}>
-          Submission Type
-        </Text>
+            <Text style={styles.label}>Status</Text>
+            <Text style={styles.value}>{request.status}</Text>
 
-        <Text style={styles.value}>
-          {request.anonymous ? 'Anonymous' : 'Standard'}
-        </Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.title}>
-          Update Status
-        </Text>
-
-        {allowedStatuses.map((status) => (
-          <Pressable
-            key={status}
-            style={styles.button}
-            onPress={() =>
-              updateStatus(request.id, status)
-            }
-          >
-            <Text style={styles.buttonText}>
-              Change to {status}
-            </Text>
-          </Pressable>
-        ))}
-
-        {allowedStatuses.length === 0 && (
-          <Text style={styles.message}>
-            No further status updates available.
-          </Text>
-        )}
-
-        <Text style={styles.info}>
-          Status changes generate demo notifications.
-        </Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.title}>
-          Staff Reply
-        </Text>
-
-        <Text style={styles.message}>
-          Write a response to the student.
-        </Text>
-
-        <TextInput
-          style={styles.input}
-          placeholder="Type your reply here..."
-          placeholderTextColor="#888888"
-          accessibilityLabel="Staff reply"
-          multiline
-          maxLength={1000}
-          value={replyText}
-          onChangeText={(text) =>
-            setDrafts((previous) => ({
-              ...previous,
-              [request.id]: text,
-            }))
-          }
-        />
-
-        <Text style={styles.counter}>
-          {replyText.length}/1000
-        </Text>
-
-        <Pressable
-          style={[
-            styles.button,
-            !replyText.trim() &&
-              styles.disabledButton,
-          ]}
-          disabled={!replyText.trim()}
-          onPress={handleSendReply}
-        >
-          <Text style={styles.buttonText}>
-            Send Reply
-          </Text>
-        </Pressable>
-
-        <Text style={styles.info}>
-          Replies generate demo notifications.
-        </Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.title}>
-          Reply History ({requestReplies.length})
-        </Text>
-
-        {requestReplies.length === 0 && (
-          <Text style={styles.message}>
-            No replies yet.
-          </Text>
-        )}
-
-        {requestReplies.map((reply) => (
-          <View
-            key={reply.id}
-            style={styles.replyCard}
-          >
-            <Text style={styles.replyAuthor}>
-              IT Support Staff
-            </Text>
-
-            <Text style={styles.replyMessage}>
-              {reply.message}
-            </Text>
-
-            <Text style={styles.replyTime}>
-              Demo reply
+            <Text style={styles.label}>Submission Type</Text>
+            <Text style={styles.value}>
+              {request.anonymous ? 'Anonymous' : 'Standard'}
             </Text>
           </View>
-        ))}
-      </View>
 
-      <Pressable
-        style={styles.button}
-        onPress={() => router.replace('/staff-queue')}
-      >
-        <Text style={styles.buttonText}>
-          Back to Queue
-        </Text>
-      </Pressable>
+          <View style={styles.card}>
+            <Text style={styles.title}>Update Status</Text>
 
-      <Pressable
-        style={styles.button}
-        onPress={() =>
-          router.push('/staff-queue/notification-demo')
-        }
-      >
-        <Text style={styles.buttonText}>
-          View Notification Demo
-        </Text>
-      </Pressable>
+            {getAllowedStatuses(request.status).map((status) => (
+              <Pressable
+                key={status}
+                disabled={busy}
+                style={styles.button}
+                onPress={() => updateStatus(status)}
+              >
+                <Text style={styles.buttonText}>
+                  Change to {status}
+                </Text>
+              </Pressable>
+            ))}
+
+            {getAllowedStatuses(request.status).length === 0 && (
+              <Text style={styles.label}>
+                No further status updates available.
+              </Text>
+            )}
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.title}>Staff Reply</Text>
+
+            <TextInput
+              style={styles.input}
+              placeholder="Write a reply..."
+              placeholderTextColor="#888888"
+              multiline
+              maxLength={1000}
+              editable={!busy && !hasPending}
+              value={message}
+              onChangeText={setMessage}
+            />
+
+            <Text style={styles.label}>
+              {message.length}/1000
+            </Text>
+
+            <Pressable
+              disabled={busy || !message.trim()}
+              style={styles.button}
+              onPress={sendReply}
+            >
+              <Text style={styles.buttonText}>
+                {busy ? 'Please wait...' : 'Send Reply'}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.title}>
+              Reply History ({replies.length})
+            </Text>
+
+            {replies.length === 0 && (
+              <Text style={styles.label}>No replies yet.</Text>
+            )}
+
+            {replies.map((reply) => (
+              <View key={reply.id} style={styles.reply}>
+                <Text style={styles.label}>
+                  {reply.authorLabel}
+                </Text>
+
+                <Text style={styles.value}>
+                  {reply.message}
+                </Text>
+
+                {reply.createdAt !== null && (
+                  <Text style={styles.label}>
+                    {new Date(reply.createdAt).toLocaleString()}
+                  </Text>
+                )}
+              </View>
+            ))}
+          </View>
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -278,122 +313,65 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     padding: 20,
     backgroundColor: '#101010',
+    gap: 16,
   },
   hero: {
     backgroundColor: '#123C35',
     padding: 24,
     borderRadius: 24,
-    marginBottom: 20,
-  },
-  badge: {
-    color: '#A7E5CC',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 2,
-    marginBottom: 12,
   },
   heading: {
     color: '#FFFFFF',
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: 'bold',
-    marginBottom: 10,
   },
   card: {
     backgroundColor: '#202020',
-    borderRadius: 14,
     padding: 20,
-    marginBottom: 15,
-  },
-  label: {
-    color: '#A7E5CC',
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  value: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    marginBottom: 20,
+    borderRadius: 14,
+    gap: 12,
   },
   title: {
     color: '#FFFFFF',
     fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 12,
   },
-  message: {
-    color: '#AAAAAA',
-    fontSize: 15,
-    lineHeight: 23,
+  label: {
+    color: '#A7E5CC',
+    fontSize: 14,
   },
-  status: {
-    color: '#F5C46B',
+  value: {
+    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 20,
-  },
-  resolvedStatus: {
-    color: '#86D6A0',
   },
   button: {
     backgroundColor: '#123C35',
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
-    marginTop: 10,
   },
   buttonText: {
     color: '#FFFFFF',
-    fontSize: 16,
     fontWeight: 'bold',
-  },
-  info: {
-    color: '#A7E5CC',
-    fontSize: 13,
-    marginTop: 15,
-    lineHeight: 20,
   },
   input: {
-    backgroundColor: '#303030',
     color: '#FFFFFF',
-    borderColor: '#444444',
-    borderWidth: 1,
-    borderRadius: 12,
+    backgroundColor: '#303030',
     padding: 15,
+    borderRadius: 12,
     minHeight: 120,
-    fontSize: 16,
     textAlignVertical: 'top',
-    marginTop: 15,
   },
-  counter: {
-    color: '#AAAAAA',
-    fontSize: 12,
-    textAlign: 'right',
-    marginTop: 8,
-  },
-  disabledButton: {
-    opacity: 0.4,
-  },
-  replyCard: {
+  reply: {
     backgroundColor: '#303030',
     padding: 15,
     borderRadius: 12,
-    marginBottom: 12,
+    gap: 8,
   },
-  replyAuthor: {
-    color: '#A7E5CC',
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  replyMessage: {
-    color: '#FFFFFF',
+  error: {
+    color: '#FF9999',
     fontSize: 15,
-    lineHeight: 22,
-  },
-  replyTime: {
-    color: '#888888',
-    fontSize: 12,
-    marginTop: 10,
   },
 });
+
 

@@ -1,5 +1,4 @@
- 
-import {
+ import {
   DarkTheme,
   DefaultTheme,
   Stack,
@@ -8,18 +7,18 @@ import {
 
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator } from 'react-native';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
 
 import { NavigationScreen } from '@/components/navigation-screen';
 import { ThemedText } from '@/components/themed-text';
-
 import {
   AuthProvider,
   useAuthSession,
 } from '@/features/auth/session';
 
-import { StaffProvider } from '@/features/staff/staff-provider';
-
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getFirebaseDb } from '@/lib/firebase';
 
 export const unstable_settings = {
   anchor: 'index',
@@ -28,12 +27,51 @@ export const unstable_settings = {
 function RootStack() {
   const session = useAuthSession();
 
+  const uid =
+    session.status === 'ready'
+      ? session.user?.uid
+      : undefined;
+
+  const [profile, setProfile] = useState<{
+    uid: string;
+    isStaff: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!uid) return;
+
+    return onSnapshot(
+      doc(getFirebaseDb(), 'profiles', uid),
+      (snapshot) => {
+        const data = snapshot.data();
+
+        setProfile({
+          uid,
+          isStaff:
+            data?.role === 'staff' &&
+            typeof data.teamId === 'string' &&
+            data.teamId.trim().length > 0,
+        });
+      },
+      () => {
+        setProfile({
+          uid,
+          isStaff: false,
+        });
+      }
+    );
+  }, [uid]);
+
+  const isStaff =
+    !!uid &&
+    profile?.uid === uid &&
+    profile.isStaff;
+
   if (session.status === 'restoring') {
     return (
       <NavigationScreen home>
         <ActivityIndicator />
-
-        <ThemedText accessibilityLiveRegion="polite">
+        <ThemedText>
           Restoring your session...
         </ThemedText>
       </NavigationScreen>
@@ -43,16 +81,11 @@ function RootStack() {
   if (session.status === 'error') {
     return (
       <NavigationScreen home>
-        <ThemedText
-          type="subtitle"
-          accessibilityRole="header"
-        >
+        <ThemedText type="subtitle">
           Authentication unavailable
         </ThemedText>
 
-        <ThemedText accessibilityRole="alert">
-          {session.message}
-        </ThemedText>
+        <ThemedText>{session.message}</ThemedText>
       </NavigationScreen>
     );
   }
@@ -120,37 +153,19 @@ function RootStack() {
           options={{ title: 'Explore' }}
         />
 
-        <Stack.Screen
-          name="staff-queue/index"
-          options={{ title: 'Staff Queue (Demo)' }}
-        />
+        <Stack.Protected guard={isStaff}>
+          <Stack.Screen
+            name="staff-queue/index"
+            options={{ title: 'Staff Queue' }}
+          />
 
-        <Stack.Screen
-          name="staff-queue/[id]"
-          options={{ title: 'Staff Request Details (Demo)' }}
-        />
-
-        <Stack.Screen
-          name="staff-queue/notification-demo"
-          options={{ title: 'Notification Demo' }}
-        />
+          <Stack.Screen
+            name="staff-queue/[id]"
+            options={{ title: 'Staff Request Details' }}
+          />
+        </Stack.Protected>
       </Stack.Protected>
     </Stack>
-  );
-}
-
-function SessionRoot() {
-  const session = useAuthSession();
-
-  const sessionKey =
-    session.status === 'ready'
-      ? session.user?.uid ?? 'guest'
-      : session.status;
-
-  return (
-    <StaffProvider key={sessionKey}>
-      <RootStack />
-    </StaffProvider>
   );
 }
 
@@ -168,7 +183,7 @@ export default function RootLayout() {
       <StatusBar style="auto" />
 
       <AuthProvider>
-        <SessionRoot />
+        <RootStack />
       </AuthProvider>
     </ThemeProvider>
   );

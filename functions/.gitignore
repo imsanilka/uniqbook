@@ -1,0 +1,9 @@
+
+node_modules/
+lib/
+functions/
+.env
+.env.*
+*.local
+*.log
+coverage/
