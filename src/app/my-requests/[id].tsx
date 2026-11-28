@@ -1,3 +1,4 @@
+import { StudentReplies } from '@/features/staff/student-replies';
 
 import { useLocalSearchParams } from 'expo-router';
 import {
@@ -136,6 +137,7 @@ export default function RequestDetailsScreen() {
             {request.createdAt?.toDate().toLocaleString() ??
               'Date unavailable'}
           </ThemedText>
+          <StudentReplies key={userId + id} requestId={id} />
         </>
       )}
 

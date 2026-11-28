@@ -1,13 +1,17 @@
-
-import type { Href } from 'expo-router';
+ import type { Href } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 import {
   NavigationCard,
   NavigationScreen,
 } from '@/components/navigation-screen';
+
 import { ThemedText } from '@/components/themed-text';
 import { SignOutButton } from '@/features/auth/sign-out-button';
+import { useAuthSession } from '@/features/auth/session';
+import { getFirebaseDb } from '@/lib/firebase';
 
 const destinations = [
   {
@@ -42,12 +46,43 @@ const destinations = [
 }[];
 
 export default function HomeScreen() {
+  const session = useAuthSession();
+
+  const uid =
+    session.status === 'ready'
+      ? session.user?.uid
+      : undefined;
+
+  const [staffUid, setStaffUid] =
+    useState<string | null>(null);
+
+  useEffect(() => {
+    if (!uid) return;
+
+    return onSnapshot(
+      doc(getFirebaseDb(), 'profiles', uid),
+      (snapshot) => {
+        const data = snapshot.data();
+
+        const validStaff =
+          data?.role === 'staff' &&
+          typeof data.teamId === 'string' &&
+          data.teamId.trim().length > 0;
+
+        setStaffUid(validStaff ? uid : null);
+      },
+      () => setStaffUid(null)
+    );
+  }, [uid]);
+
+  const isStaff = !!uid && staffUid === uid;
+
   return (
     <NavigationScreen home>
       <View style={styles.hero}>
         <View style={styles.heroBadge}>
           <Text style={styles.heroBadgeText}>
-            STUDENT PORTAL
+            {isStaff ? 'STAFF PORTAL' : 'STUDENT PORTAL'}
           </Text>
         </View>
 
@@ -78,6 +113,14 @@ export default function HomeScreen() {
           How can we help you today?
         </ThemedText>
       </View>
+
+      {isStaff && (
+        <NavigationCard
+          href="/staff-queue"
+          title="Staff Queue"
+          description="Manage assigned department requests."
+        />
+      )}
 
       {destinations.map((destination) => (
         <NavigationCard
@@ -159,3 +202,4 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
 });
+
