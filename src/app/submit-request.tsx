@@ -1,4 +1,4 @@
-
+﻿
 import {
   addDoc,
   collection,
@@ -70,10 +70,7 @@ export default function SubmitRequestScreen() {
     setMessage('');
     setSuccess(false);
 
-    if (isAnonymous) {
-      setMessage('Anonymous reporting is not yet available.');
-      return;
-    }
+
 
     if (session.status !== 'ready' || !session.user) {
       setMessage('Please sign in first.');
@@ -113,8 +110,8 @@ export default function SubmitRequestScreen() {
     try {
       setLoading(true);
 
-      await addDoc(collection(getFirebaseDb(), 'requests'), {
-        userId: session.user.uid,
+      await addDoc(collection(getFirebaseDb(), isAnonymous ? 'anonymousReports' : 'requests'), {
+        ...(isAnonymous ? { isAnonymous: true } : { userId: session.user.uid }),
         title: title.trim(),
         description: description.trim(),
         requestType,
@@ -287,13 +284,13 @@ export default function SubmitRequestScreen() {
         </View>
 
         <Text style={styles.anonymousDescription}>
-          Anonymous reporting is not yet available.
-          Backend integration is pending.
+          Your account ID will not be stored with this report.
+          Avoid including personal information in your description.
         </Text>
 
         {isAnonymous && (
           <Text style={styles.warning}>
-            Submission is disabled in anonymous mode.
+            Anonymous reports will not appear in My Requests.
           </Text>
         )}
 
@@ -302,10 +299,10 @@ export default function SubmitRequestScreen() {
       <TouchableOpacity
         style={[
           styles.button,
-          (loading || isAnonymous) && styles.disabledButton,
+          loading && styles.disabledButton,
         ]}
         onPress={handleSubmit}
-        disabled={loading || isAnonymous}
+        disabled={loading}
       >
 
         <Text style={styles.buttonText}>
@@ -510,3 +507,4 @@ const styles = StyleSheet.create({
   },
 
 });
+
