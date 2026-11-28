@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -8,33 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-
-const clubs = [
-  {
-    id: 'c1',
-    title: 'IT Society',
-    category: 'Technology',
-    description: 'Explore programming, technology workshops and software development.',
-  },
-  {
-    id: 'c2',
-    title: 'Media Club',
-    category: 'Creative',
-    description: 'Develop photography, videography and media production skills.',
-  },
-  {
-    id: 'c3',
-    title: 'Sports Club',
-    category: 'Sports',
-    description: 'Participate in sports activities and university competitions.',
-  },
-  {
-    id: 'c4',
-    title: 'Music Club',
-    category: 'Entertainment',
-    description: 'Connect with students interested in music and performances.',
-  },
-];
+import { getPublishedClubs } from '../features/clubs/clubs-service';
 
 const events = [
   {
@@ -64,6 +38,41 @@ const events = [
 ];
 
 export default function ClubsEventsScreen() {
+  const [clubs, setClubs] = useState<
+  {
+    id: string;
+    title: string;
+    category: string;
+    description: string;
+  }[]
+>([]);
+
+const [loading, setLoading] = useState(true);
+const [error, setError] = useState('');
+
+useEffect(() => {
+  async function loadClubs() {
+    try {
+      const data = await getPublishedClubs();
+
+      setClubs(
+        data.map((club) => ({
+          id: club.id,
+          title: club.name,
+          category: club.category,
+          description: club.description,
+        }))
+      );
+    } catch (err) {
+      console.error(err);
+      setError('Unable to load clubs.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  loadClubs();
+}, []);
   const [tab, setTab] = useState<'Clubs' | 'Events'>('Clubs');
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -119,11 +128,24 @@ export default function ClubsEventsScreen() {
         {filteredItems.length} {tab.toLowerCase()} found
       </Text>
 
-      {filteredItems.length === 0 && (
-        <Text style={styles.subtitle}>
-          No matching results found.
-        </Text>
-      )}
+      {tab === 'Clubs' && loading && (
+  <Text style={styles.subtitle}>
+    Loading clubs...
+  </Text>
+)}
+
+{tab === 'Clubs' && error !== '' && (
+  <Text style={styles.subtitle}>
+    {error}
+  </Text>
+)}
+
+{filteredItems.length === 0 &&
+  (tab === 'Events' || (!loading && !error)) && (
+    <Text style={styles.subtitle}>
+      No matching results found.
+    </Text>
+)}
 
       {filteredItems.map((item) => (
         <TouchableOpacity
@@ -166,9 +188,11 @@ export default function ClubsEventsScreen() {
         </TouchableOpacity>
       ))}
 
-      <Text style={styles.notice}>
-        Demonstration content — sample clubs and events.
-      </Text>
+<Text style={styles.notice}>
+  {tab === 'Clubs'
+    ? 'Published clubs from Firebase.'
+    : 'Demonstration content — sample events.'}
+</Text>
     </ScrollView>
   );
 }
